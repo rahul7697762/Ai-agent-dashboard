@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Database, Json } from '../types';
 
 type Analysis = Database['public']['Tables']['semantic_analysis']['Row'];
+type DateRange = 'all' | '7d' | '30d' | '90d';
 
 const countOccurrences = (items: (Json | null)[]) => {
     const counter: { [key: string]: number } = {};
@@ -12,6 +13,12 @@ const countOccurrences = (items: (Json | null)[]) => {
             keys.forEach(k => {
                 counter[k] = (counter[k] || 0) + 1;
             });
+        } else if (item && Array.isArray(item)) {
+             item.forEach(i => {
+                if (typeof i === 'string') {
+                    counter[i] = (counter[i] || 0) + 1;
+                }
+             });
         }
     });
     return Object.entries(counter)
@@ -26,18 +33,43 @@ const AnalyticsCard: React.FC<{ title: string; children: React.ReactNode; classN
     </div>
 );
 
+const DateRangeButton: React.FC<{ range: DateRange; current: DateRange; setRange: (range: DateRange) => void; children: React.ReactNode; }> = ({ range, current, setRange, children }) => (
+    <button
+        onClick={() => setRange(range)}
+        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            current === range
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+        }`}
+    >
+        {children}
+    </button>
+);
+
+
 const Analytics: React.FC = () => {
     const [analysisData, setAnalysisData] = useState<Analysis[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [dateRange, setDateRange] = useState<DateRange>('all');
 
     useEffect(() => {
         const fetchAnalytics = async () => {
             setLoading(true);
             setError(null);
-            const { data, error } = await supabase
+            
+            let query = supabase
                 .from('semantic_analysis')
                 .select('*');
+
+            if (dateRange !== 'all') {
+                const days = parseInt(dateRange.replace('d', ''));
+                const startDate = new Date();
+                startDate.setDate(startDate.getDate() - days);
+                query = query.gte('created_at', startDate.toISOString());
+            }
+
+            const { data, error } = await query;
 
             if (error) {
                 console.error('Error fetching analytics:', error);
@@ -48,7 +80,7 @@ const Analytics: React.FC = () => {
             setLoading(false);
         };
         fetchAnalytics();
-    }, []);
+    }, [dateRange]);
 
     const processedData = useMemo(() => {
         if (analysisData.length === 0) {
@@ -139,9 +171,17 @@ const Analytics: React.FC = () => {
 
     return (
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-8">
-            <header>
-                <h2 className="text-3xl font-bold tracking-tight text-white">Analytics</h2>
-                <p className="mt-1 text-slate-400">Key insights from semantic analysis.</p>
+            <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h2 className="text-3xl font-bold tracking-tight text-white">Analytics</h2>
+                    <p className="mt-1 text-slate-400">Key insights from semantic analysis.</p>
+                </div>
+                 <div className="flex items-center gap-2 bg-slate-800/50 p-1.5 rounded-lg border border-slate-700/50">
+                    <DateRangeButton range="7d" current={dateRange} setRange={setDateRange}>7 Days</DateRangeButton>
+                    <DateRangeButton range="30d" current={dateRange} setRange={setDateRange}>30 Days</DateRangeButton>
+                    <DateRangeButton range="90d" current={dateRange} setRange={setDateRange}>90 Days</DateRangeButton>
+                    <DateRangeButton range="all" current={dateRange} setRange={setDateRange}>All Time</DateRangeButton>
+                </div>
             </header>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

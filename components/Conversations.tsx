@@ -47,15 +47,41 @@ const Conversations: React.FC = () => {
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [filters, setFilters] = useState({ recipient: '', date: '' });
+    const [debouncedRecipient, setDebouncedRecipient] = useState('');
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedRecipient(filters.recipient);
+        }, 500); // Debounce search input
+        return () => clearTimeout(handler);
+    }, [filters.recipient]);
 
     useEffect(() => {
         const fetchConversations = async () => {
             setLoading(true);
             setError(null);
-            const { data, error } = await supabase
+
+            let query = supabase
                 .from('call_history')
                 .select('*')
                 .order('created_at', { ascending: false });
+
+            if (debouncedRecipient) {
+                query = query.ilike('recipient_number', `%${debouncedRecipient}%`);
+            }
+
+            if (filters.date) {
+                const startDate = new Date(filters.date);
+                startDate.setUTCHours(0, 0, 0, 0);
+                const endDate = new Date(startDate);
+                endDate.setUTCDate(endDate.getUTCDate() + 1);
+                
+                query = query.gte('created_at', startDate.toISOString())
+                             .lt('created_at', endDate.toISOString());
+            }
+
+            const { data, error } = await query;
 
             if (error) {
                 console.error('Error fetching conversations:', error);
@@ -67,7 +93,16 @@ const Conversations: React.FC = () => {
         };
 
         fetchConversations();
-    }, []);
+    }, [debouncedRecipient, filters.date]);
+
+    const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
+
+    const clearFilters = () => {
+        setFilters({ recipient: '', date: '' });
+    };
 
     const TableSkeleton = () => (
         <div className="overflow-x-auto">
@@ -88,13 +123,37 @@ const Conversations: React.FC = () => {
         </div>
     );
 
-
     return (
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-8">
             <header>
               <h2 className="text-3xl font-bold tracking-tight text-white">Conversations</h2>
               <p className="mt-1 text-slate-400">Review all recorded calls and their transcripts.</p>
             </header>
+
+            <div className="bg-slate-800/50 p-4 rounded-xl flex flex-wrap items-center gap-4 border border-slate-700/50">
+                <input
+                    type="text"
+                    name="recipient"
+                    value={filters.recipient}
+                    onChange={handleFilterChange}
+                    placeholder="Search by recipient..."
+                    className="flex-grow bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                />
+                <input
+                    type="date"
+                    name="date"
+                    value={filters.date}
+                    onChange={handleFilterChange}
+                    className="bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                />
+                <button
+                    onClick={clearFilters}
+                    className="bg-slate-700 text-slate-300 font-semibold py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors"
+                >
+                    Clear Filters
+                </button>
+            </div>
+
             <div className="bg-slate-800 p-4 sm:p-6 rounded-xl shadow-lg">
                 {loading ? (
                     <TableSkeleton />
@@ -103,7 +162,7 @@ const Conversations: React.FC = () => {
                 ) : conversations.length === 0 ? (
                     <div className="text-center py-8 text-slate-400">
                         <p className="font-semibold">No Conversations Found</p>
-                        <p className="text-sm mt-1">When calls are made, they will appear here.</p>
+                        <p className="text-sm mt-1">No results match the current filters.</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">

@@ -60,38 +60,67 @@ const RecentCallsSkeleton = () => (
   </div>
 );
 
+type DateRange = 'today' | '7d' | '30d';
+
+const DateRangeButton: React.FC<{ range: DateRange; current: DateRange; setRange: (range: DateRange) => void; children: React.ReactNode; }> = ({ range, current, setRange, children }) => (
+    <button
+        onClick={() => setRange(range)}
+        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            current === range
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+        }`}
+    >
+        {children}
+    </button>
+);
+
 const Dashboard: React.FC = () => {
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPhoneCallModalOpen, setIsPhoneCallModalOpen] = useState(false);
-  const [meetingsToday, setMeetingsToday] = useState<number | null>(null);
+  const [meetingsInPeriod, setMeetingsInPeriod] = useState<number | null>(null);
   const [stats, setStats] = useState({ totalCalls: null, avgDuration: null, successRate: null });
   const [statsLoading, setStatsLoading] = useState(true);
+  const [dateRange, setDateRange] = useState<DateRange>('today');
   
   useEffect(() => {
+    const getDatesFromRange = (range: DateRange) => {
+        const end = new Date();
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+
+        switch (range) {
+            case 'today':
+                end.setHours(23, 59, 59, 999);
+                break;
+            case '7d':
+                start.setDate(start.getDate() - 6);
+                break;
+            case '30d':
+                start.setDate(start.getDate() - 29);
+                break;
+        }
+        return { startDate: start, endDate: end };
+    };
+    
+    const { startDate, endDate } = getDatesFromRange(dateRange);
+
     const fetchDashboardData = async () => {
       setLoading(true);
       setStatsLoading(true);
       setError(null);
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const todayISO = today.toISOString();
-      const tomorrowISO = tomorrow.toISOString();
 
-      // Fetch calls for today with related analysis for stats calculation
-      const { data: callsToday, error: callsError } = await supabase
+      // Fetch calls with related analysis for stats calculation
+      const { data: calls, error: callsError } = await supabase
         .from('call_history')
-        // FIX: Added 'sentiment' to the select query to make it available for the RecentCall mapping.
         .select(`
           id, created_at, recipient_number, call_duration, disconnection_reason, name,
           semantic_analysis ( alert_status, sentiment )
         `)
-        .gte('created_at', todayISO)
-        .lt('created_at', tomorrowISO)
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString())
         .order('created_at', { ascending: false });
 
       if (callsError) {
@@ -103,11 +132,11 @@ const Dashboard: React.FC = () => {
       }
 
       // --- Calculate Stats ---
-      const totalCalls = callsToday.length;
-      const totalDuration = callsToday.reduce((sum, call) => sum + (call.call_duration || 0), 0);
+      const totalCalls = calls.length;
+      const totalDuration = calls.reduce((sum, call) => sum + (call.call_duration || 0), 0);
       const avgDuration = totalCalls > 0 ? totalDuration / totalCalls : 0;
       
-      const successfulCallsCount = callsToday.filter(call => {
+      const successfulCallsCount = calls.filter(call => {
         const analysis = Array.isArray(call.semantic_analysis) ? call.semantic_analysis[0] : call.semantic_analysis;
         return analysis && analysis.alert_status !== 'error' && analysis.alert_status !== 'warning';
       }).length;
@@ -122,9 +151,8 @@ const Dashboard: React.FC = () => {
       setStatsLoading(false);
 
       // --- Map Recent Calls (limit to 5) ---
-      if (callsToday) {
-        const mappedData: RecentCall[] = callsToday.slice(0, 5).map((call) => {
-          // FIX: Correctly handle cases where semantic_analysis is an array or a single object.
+      if (calls) {
+        const mappedData: RecentCall[] = calls.slice(0, 5).map((call) => {
           const analysis = Array.isArray(call.semantic_analysis)
             ? call.semantic_analysis[0]
             : call.semantic_analysis;
@@ -144,37 +172,45 @@ const Dashboard: React.FC = () => {
       setLoading(false);
     };
 
-    const fetchMeetingsToday = async () => {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        const todayISOString = `${year}-${month}-${day}`;
-  
+    const fetchMeetings = async () => {
         const { count, error } = await supabase
           .from('call_history')
           .select('*', { count: 'exact', head: true })
-          .eq('tour_date', todayISOString);
+          .gte('tour_date', startDate.toISOString().split('T')[0])
+          .lte('tour_date', endDate.toISOString().split('T')[0]);
   
         if (error) {
-          console.error('Error fetching meetings for today:', error);
-          setMeetingsToday(0);
+          console.error('Error fetching meetings for period:', error);
+          setMeetingsInPeriod(0);
         } else {
-          setMeetingsToday(count);
+          setMeetingsInPeriod(count);
         }
     };
 
     fetchDashboardData();
-    fetchMeetingsToday();
-  }, []);
+    fetchMeetings();
+  }, [dateRange]);
   
+  const dateRangeLabels: Record<DateRange, string> = {
+    today: 'Today',
+    '7d': 'Last 7 Days',
+    '30d': 'Last 30 Days'
+  };
+  const dateRangeLabel = dateRangeLabels[dateRange];
 
   return (
     <>
       <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-8">
-        <header>
-          <h2 className="text-3xl font-bold tracking-tight text-white">Dashboard Overview</h2>
-          <p className="mt-1 text-slate-400">Manage your calls and conversations.</p>
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight text-white">Dashboard Overview</h2>
+            <p className="mt-1 text-slate-400">Manage your calls and conversations.</p>
+          </div>
+          <div className="flex items-center gap-2 bg-slate-800/50 p-1.5 rounded-lg border border-slate-700/50">
+            <DateRangeButton range="today" current={dateRange} setRange={setDateRange}>Today</DateRangeButton>
+            <DateRangeButton range="7d" current={dateRange} setRange={setDateRange}>Last 7 Days</DateRangeButton>
+            <DateRangeButton range="30d" current={dateRange} setRange={setDateRange}>Last 30 Days</DateRangeButton>
+          </div>
         </header>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -184,7 +220,7 @@ const Dashboard: React.FC = () => {
           </div>
           
           <StatCard data={{
-            id: 'calls', title: 'Total Calls Today', 
+            id: 'calls', title: `Total Calls (${dateRangeLabel})`, 
             value: statsLoading ? '--' : String(stats.totalCalls),
             change: '', isPositive: true, icon: <ChartBarIcon className="w-8 h-8" /> 
           }} />
@@ -200,9 +236,9 @@ const Dashboard: React.FC = () => {
           }} />
           <StatCard data={{
               id: 'meetings-today',
-              title: 'Meetings Scheduled Today',
-              value: meetingsToday === null ? '--' : String(meetingsToday),
-              change: '', // No change value needed for this stat
+              title: `Meetings Scheduled (${dateRangeLabel})`,
+              value: meetingsInPeriod === null ? '--' : String(meetingsInPeriod),
+              change: '',
               isPositive: true,
               icon: <CalendarIcon className="w-8 h-8" />
           }} />
@@ -211,7 +247,7 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-slate-800 p-6 rounded-xl shadow-lg">
             <h3 className="text-lg font-semibold text-white">Recent Calls</h3>
-            <p className="text-sm text-slate-400 mb-4">Latest voice agent interactions</p>
+            <p className="text-sm text-slate-400 mb-4">Latest voice agent interactions from the selected period</p>
             {loading ? (
               <RecentCallsSkeleton />
             ) : error ? (
@@ -222,7 +258,7 @@ const Dashboard: React.FC = () => {
             ) : recentCalls.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">
                     <p className="font-semibold">No Recent Calls</p>
-                    <p className="text-sm mt-1">When calls are made, they will appear here.</p>
+                    <p className="text-sm mt-1">No calls were found for the selected period.</p>
                      <p className="text-xs mt-4 bg-slate-700/50 p-3 rounded-md max-w-md mx-auto">
                         <b>Tip:</b> If you have data in your Supabase tables but it's not appearing here, ensure that Row Level Security (RLS) is disabled or properly configured for read access.
                     </p>
@@ -253,13 +289,6 @@ const Dashboard: React.FC = () => {
                   <div className="flex justify-between">
                       <span className="text-slate-400">Response Time</span>
                       <span className="font-semibold text-white">&lt; 200ms</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                      <span className="text-slate-400">Active Channels</span>
-                      <span className="font-semibold text-white">5 / 10</span>
-                  </div>
-                  <div className="w-full bg-slate-700 rounded-full h-2.5">
-                      <div className="bg-blue-500 h-2.5 rounded-full" style={{width: '50%'}}></div>
                   </div>
               </div>
               

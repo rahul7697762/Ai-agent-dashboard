@@ -20,16 +20,37 @@ const Meetings: React.FC = () => {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [filters, setFilters] = useState({ search: '', startDate: '', endDate: '' });
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearch(filters.search);
+        }, 500);
+        return () => clearTimeout(handler);
+    }, [filters.search]);
 
     useEffect(() => {
         const fetchMeetings = async () => {
             setLoading(true);
             setError(null);
-            const { data, error } = await supabase
+            let query = supabase
                 .from('call_history')
                 .select('id, name, recipient_number, tour_date')
                 .not('tour_date', 'is', null)
                 .order('tour_date', { ascending: true });
+
+            if (debouncedSearch) {
+                query = query.or(`name.ilike.%${debouncedSearch}%,recipient_number.ilike.%${debouncedSearch}%`);
+            }
+            if (filters.startDate) {
+                query = query.gte('tour_date', filters.startDate);
+            }
+            if (filters.endDate) {
+                query = query.lte('tour_date', filters.endDate);
+            }
+
+            const { data, error } = await query;
 
             if (error) {
                 console.error('Error fetching meetings:', error);
@@ -41,7 +62,16 @@ const Meetings: React.FC = () => {
         };
 
         fetchMeetings();
-    }, []);
+    }, [debouncedSearch, filters.startDate, filters.endDate]);
+
+    const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
+
+    const clearFilters = () => {
+        setFilters({ search: '', startDate: '', endDate: '' });
+    };
 
     const TableSkeleton = () => (
         <div className="overflow-x-auto">
@@ -68,6 +98,27 @@ const Meetings: React.FC = () => {
               <h2 className="text-3xl font-bold tracking-tight text-white">Scheduled Meetings</h2>
               <p className="mt-1 text-slate-400">Review all upcoming tours scheduled by the voice agent.</p>
             </header>
+
+            <div className="bg-slate-800/50 p-4 rounded-xl flex flex-wrap items-center gap-4 border border-slate-700/50">
+                <input
+                    type="text"
+                    name="search"
+                    value={filters.search}
+                    onChange={handleFilterChange}
+                    placeholder="Search by name or number..."
+                    className="flex-grow bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                />
+                <div className="flex items-center gap-2">
+                    <label htmlFor="startDate" className="text-sm text-slate-400">From:</label>
+                    <input type="date" name="startDate" id="startDate" value={filters.startDate} onChange={handleFilterChange} className="bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" />
+                </div>
+                 <div className="flex items-center gap-2">
+                    <label htmlFor="endDate" className="text-sm text-slate-400">To:</label>
+                    <input type="date" name="endDate" id="endDate" value={filters.endDate} onChange={handleFilterChange} className="bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" />
+                </div>
+                <button onClick={clearFilters} className="bg-slate-700 text-slate-300 font-semibold py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors">Clear</button>
+            </div>
+
             <div className="bg-slate-800 p-4 sm:p-6 rounded-xl shadow-lg">
                 {loading ? (
                     <TableSkeleton />
@@ -76,7 +127,7 @@ const Meetings: React.FC = () => {
                 ) : meetings.length === 0 ? (
                     <div className="text-center py-8 text-slate-400">
                         <p className="font-semibold">No Meetings Scheduled</p>
-                        <p className="text-sm mt-1">When the agent schedules a tour, it will appear here.</p>
+                        <p className="text-sm mt-1">No meetings match the current filters.</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
