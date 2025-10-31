@@ -79,7 +79,6 @@ const Dashboard: React.FC = () => {
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isPhoneCallModalOpen, setIsPhoneCallModalOpen] = useState(false);
   const [meetingsInPeriod, setMeetingsInPeriod] = useState<number | null>(null);
   const [stats, setStats] = useState({ totalCalls: null, avgDuration: null, successRate: null });
   const [statsLoading, setStatsLoading] = useState(true);
@@ -273,35 +272,6 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="space-y-8">
-            <div className="bg-slate-800 p-6 rounded-xl shadow-lg">
-              <h3 className="text-lg font-semibold text-white">Voice Agent Status</h3>
-              <p className="text-sm text-slate-400 mb-6">Current system status and controls</p>
-              
-              <div className="space-y-4 text-sm">
-                  <div className="flex justify-between">
-                      <span className="text-slate-400">System Status</span>
-                      <span className="font-semibold text-green-400">All systems operational</span>
-                  </div>
-                  <div className="flex justify-between">
-                      <span className="text-slate-400">Voice Quality</span>
-                      <span className="font-semibold text-white">High</span>
-                  </div>
-                  <div className="flex justify-between">
-                      <span className="text-slate-400">Response Time</span>
-                      <span className="font-semibold text-white">&lt; 200ms</span>
-                  </div>
-              </div>
-              
-              <div className="mt-6">
-                  <button 
-                    onClick={() => setIsPhoneCallModalOpen(true)}
-                    className="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors duration-200"
-                  >
-                    Test Voice Agent
-                  </button>
-              </div>
-            </div>
-
             <div className="bg-yellow-500/10 border-l-4 border-yellow-400 text-yellow-300 p-4 rounded-r-lg" role="alert">
               <p className="font-bold">Reminder</p>
               <p className="text-sm">3 pending acknowledgments require review.</p>
@@ -309,9 +279,6 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </main>
-      {isPhoneCallModalOpen && (
-        <StartCallModal onClose={() => setIsPhoneCallModalOpen(false)} />
-      )}
     </>
   );
 };
