@@ -259,7 +259,7 @@ const Dashboard: React.FC = () => {
                     <p className="font-semibold">No Recent Calls</p>
                     <p className="text-sm mt-1">No calls were found for the selected period.</p>
                      <p className="text-xs mt-4 bg-slate-700/50 p-3 rounded-md max-w-md mx-auto">
-                        <b>Tip:</b> If you have data in your Supabase tables but it's not appearing here, ensure that Row Level Security (RLS) is disabled or properly configured for read access.
+                        <b>Tip:</b> If you have data in your Supabase tables but it's not appearing here, ensure that Row Level Security (RLS) is disabld or properly configured for read access.
                     </p>
                 </div>
             ) : (
